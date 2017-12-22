@@ -1,0 +1,177 @@
+---
+title: "RMarkDown1.1"
+author: "Prakash Matthew"
+date: "22 December 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prediction Assignment
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+# Loading the data and looking through the content
+
+```r
+train <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+
+library(caret)
+intrain <- createDataPartition(y=train$classe, p = 0.7, list = FALSE)
+train1 <- train[intrain,]
+test1 < - train[-intrain,]
+summary(train1)
+titles(train1)
+??titles
+```
+I wanted to see what was different in the test and train data set predictors.*titles* is not a function in R the required function is *colnames*
+
+```r
+c<- intersect(colnames(test), colnames(train))
+?c
+cin<- intersect(colnames(test), colnames(train))
+summary(train1[,-colnames(c((cin)))])
+
+whatt <-  test[which(!(colnames(test)%in%cin)),]
+colnames(test)
+test$problem_id
+colnames(train[which(!(colnames(test)==colnames(train)))])
+```
+the last column of test data is labelled problems_id and train data is classe. The idea was to not make a model which used predictors for which data wouldn't be available in the test set.
+
+#Put it all in?
+
+```r 
+model1 <- train(classe~. , method = "rf", data = train1) 
+predict_model1 <- predict(model1, test1)
+length(predict_model1)
+confusionMatrix(test1$classe, predict(model1, test1))
+predict(model1, test1)
+```
+Bad idea because:
+1. Taking forever 
+2. The models doesn't predict for all test variables (couldn't figure out why, do advice)
+3. Left it to the model to take care of missing values
+
+Next I tried making models for each individual *assuming* (with no basis) that individual characteristics would determine classe, thus splitting the data into 6 for each of the 6 participants. I will not insert all that code here, it was an excercise in futility.
+I tried using *Rpart* instead of *randomforest* as well but it didn't solve the 3 problems.
+
+#Realising that the data is far from perfect
+
+```r
+train6 <- na.omit(train)
+table(train6$user_name)
+#train6 has just 406 observations
+#based on null values deleted columns with large missing values ASSUMING limited/inconsistent predictive capabilities
+
+#correlation
+corre <- abs(cor((train3[,-c(1,120)])))
+diag(corre) <- 0
+which(corre>0.8, arr.ind = T)
+
+#rpart model 2
+m.rp.2 <- train(classe ~ . , method = "rpart", data = train3)
+library(rattle)
+fancyRpartPlot(m.rp.2$finalModel)
+
+#randomforest model 2
+m.rf.2 <- train(classe ~ . , method = "rf", data = train3)
+p3 <- predict(m.rf.2,newdata = test1)
+length(p3)
+summary(p3)
+```
+
+**replacing NA with 0s (not sure if it's the right thing..hoping to solve the limited number of predictions problem)**
+
+```r
+train4 <- train3
+for(i in 1:120){
+  for(j in 1:19622){
+    if(is.na(train4[j,i])){
+      train4[j,i] <- 0
+    }
+  }
+}
+library(caret)
+m.rp.3 <- train(classe ~ . , method = "rpart", data = train4)
+library(rattle)
+fancyRpartPlot(m.rp.3$finalModel)
+p4 <- predict(m.rp.3, test1)
+length(p4)
+```
+
+
+**Missing predictions problems not solved :/**
+
+#Breakthrough
+After many more iteration of different models, I realised that I had kept the test data sacrosanct assuming atleast that would be complete. Looking at the data I realised there were many missing values in the predictors and I came to the conclusion that any model would fail to predict for the test data if the test data didn't have values for the predictors in the train data used to make the model.
+So looking at the test data I decided to rid the train data of those empty predictors
+**[I appreciate your comments on this decision]**
+
+```r
+#removing columns not present in test data set
+test7 <- test[,-c(12:36,50:59,69:83,87:101,103:112,125:139,141:150)]
+train7 <- train[,-c(12:36,50:59,69:83,87:101,103:112,125:139,141:150)]
+
+```
+**After many failed rpart models and randomforest models**
+
+```r
+library(caret)
+m.rf.4 <- train(classe ~ . , method = "rf", data = train8)
+p.rf.4 <- predict(m.rf.4, test8)
+m.rf.4
+```
+
+#Cross-validation 3 fold 5 times (as 10 fold 10 times was taking more than 6 hours)
+
+```r
+train9 <- train8[,-59]
+train.label <- as.factor(train8$classe)
+
+cv.3folds <- createMultiFolds(train.label, k = 3, times = 5)
+ctrl1 <- trainControl(method = "repeatedcv", number = 3, repeats = 5, index = cv.3folds)
+
+#the doSNOW package makes processing faster by using your CPUs multiple cores better
+library(doSNOW)
+cl <- makeCluster(3, type = "SOCK")
+registerDoSNOW(cl)
+m.rf.5 <- train( x = train9, y = train.label, method = "rf", trControl = ctrl1)
+
+stopCluster(cl)
+
+test9 <- test8[,-59]
+```
+**OOB error rate for cross-validated model**
+
+**m.rf.5**
+Type of random forest: classification
+Number of trees: 500
+No. of variables tried at each split: 30
+
+OOB estimate of  error rate: 0.07%
+
+
+#Final words
+
+1. m.rf.4 has all the 20 test variables correctly predicted.
+2. The cross validated model (m.rf.5) couldn't be used for predicting as error of test dataset being different from the train data set came up which I couldn't resolve.
+3. Please provide critcal feedback if possible. 
+4. Wish you a dataful new year ahead :]
+
